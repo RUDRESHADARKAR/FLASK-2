@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 import requests
-import re
-import json
+from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -11,25 +10,22 @@ def home():
 
 @app.route('/download', methods=['POST'])
 def download():
-    url = request.json.get('url')
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    # Accept both JSON and form-data input
+    url = request.json.get('url') if request.is_json else request.form.get('url')
 
-    try:
-        res = requests.get(url, headers=headers)
-        shared_data = re.search(r"window\.__additionalDataLoaded\('extra',(.*?)\);</script>", res.text)
-        
-        if not shared_data:
-            return jsonify({"error": "Could not parse video data"}), 400
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
 
-        json_data = json.loads(shared_data.group(1))
-        video_url = json_data['graphql']['shortcode_media']['video_url']
-        
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, 'html.parser')
+    og_video = soup.find('meta', property='og:video')
+
+    if og_video:
+        video_url = og_video['content']
         return jsonify({"video_url": video_url})
-    
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    else:
+        return jsonify({"error": "Could not fetch video. Make sure it's public."}), 400
 
 if __name__ == '__main__':
     app.run()
